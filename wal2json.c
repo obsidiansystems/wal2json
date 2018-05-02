@@ -609,10 +609,6 @@ tuple_to_stringinfo(LogicalDecodingContext *ctx, TupleDesc tupdesc, HeapTuple tu
 		/* Get Datum from tuple */
 		origval = heap_getattr(tuple, natt + 1, tupdesc, &isnull);
 
-		/* Skip nulls iif printing key/identity */
-		if (isnull && replident)
-			continue;
-
 		if (!isnull && typisvarlena && VARATT_IS_EXTERNAL_ONDISK(origval) && !data->include_unchanged_toast)
 		{
 			/* TOAST value is not returned if include-unchanged-toast is specified */
@@ -680,31 +676,6 @@ tuple_to_stringinfo(LogicalDecodingContext *ctx, TupleDesc tupdesc, HeapTuple tu
 			 */
 			switch (typid)
 			{
-				case INT2OID:
-				case INT4OID:
-				case INT8OID:
-				case OIDOID:
-				case FLOAT4OID:
-				case FLOAT8OID:
-				case NUMERICOID:
-					if (pg_strncasecmp(outputstr, "NaN", 3) == 0 ||
-							pg_strncasecmp(outputstr, "Infinity", 8) == 0 ||
-							pg_strncasecmp(outputstr, "-Infinity", 9) == 0)
-					{
-						appendStringInfo(&colvalues, "%snull", comma);
-						elog(DEBUG1, "attribute \"%s\" is special: %s", NameStr(attr->attname), outputstr);
-					}
-					else if (strspn(outputstr, "0123456789+-eE.") == strlen(outputstr))
-						appendStringInfo(&colvalues, "%s%s", comma, outputstr);
-					else
-						elog(ERROR, "%s is not a number", outputstr);
-					break;
-				case BOOLOID:
-					if (strcmp(outputstr, "t") == 0)
-						appendStringInfo(&colvalues, "%strue", comma);
-					else
-						appendStringInfo(&colvalues, "%sfalse", comma);
-					break;
 				case BYTEAOID:
 					appendStringInfoString(&colvalues, comma);
 					// XXX: strings here are "\xC0FFEE", we strip the "\x"
@@ -1026,6 +997,9 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		appendStringInfoString(ctx->out, "\t\t\t\"table\": ");
 		escape_json(ctx->out, NameStr(class_form->relname));
 		appendStringInfoString(ctx->out, ",\n");
+		appendStringInfoString(ctx->out, "\t\t\t\"tableoid\": ");
+        appendStringInfo(ctx->out, "%u", class_form->reltype);
+		appendStringInfoString(ctx->out, ",\n");
 	}
 	else
 	{
@@ -1037,6 +1011,9 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		}
 		appendStringInfoString(ctx->out, "\"table\":");
 		escape_json(ctx->out, NameStr(class_form->relname));
+		appendStringInfoCharMacro(ctx->out, ',');
+		appendStringInfoString(ctx->out, "\"tableoid\":");
+        appendStringInfo(ctx->out, "%u", class_form->reltype);
 		appendStringInfoCharMacro(ctx->out, ',');
 	}
 
